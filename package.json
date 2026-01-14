@@ -1,0 +1,25 @@
+{
+  "name": "payment-gateway",
+  "version": "1.0.0",
+  "description": "This project is a full-stack **Payment Gateway Simulation System** inspired by real-world platforms like Razorpay and Stripe. It allows merchants to create orders, accept payments via UPI or Card, and simulate payment success or failure in a secure, test-friendly environment.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GowthamiAkula/payment-gateway-task.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/GowthamiAkula/payment-gateway-task/issues"
+  },
+  "homepage": "https://github.com/GowthamiAkula/payment-gateway-task#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-fetch": "^3.3.2"
+  }
+}

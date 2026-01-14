@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import "./Dashboard.css";
 
 function Dashboard() {
@@ -7,67 +8,70 @@ function Dashboard() {
 
   const [health, setHealth] = useState({
     backend: "Checking...",
-    database: ""
+    database: "Checking..."
   });
 
   useEffect(() => {
-    fetch("http://localhost:8000/health")
-      .then(res => res.json())
-      .then(data => {
+    async function loadHealth() {
+      try {
+        const res = await fetch("/health");
+        const data = await res.json();
+
         setHealth({
           backend: data.status === "ok" ? "Operational" : "Down",
-          database: data.database
+          database: data.database || "Unknown"
         });
-      })
-      .catch(() => {
+      } catch (err) {
         setHealth({
           backend: "Not Reachable",
-          database: ""
+          database: "Not Reachable"
         });
-      });
+      }
+    }
+
+    loadHealth();
   }, []);
 
   return (
     <div className="dashboard-container">
       <h1 className="dashboard-title">Merchant Dashboard</h1>
 
-      {/* Credentials */}
       <div className="card">
         <h3>API Credentials</h3>
+
         <div className="key-row">
           <span>API Key</span>
           <code>{apiKey}</code>
         </div>
+
         <div className="key-row">
           <span>API Secret</span>
           <code>{apiSecret}</code>
         </div>
       </div>
 
-      {/* Health Cards */}
       <div className="grid">
         <div className="stat-card">
           <h4>Backend Status</h4>
-          <p
-            className={
-              health.backend === "Operational" ? "ok" : "error"
-            }
-          >
+          <p className={health.backend === "Operational" ? "ok" : "error"}>
             {health.backend}
           </p>
         </div>
 
         <div className="stat-card">
           <h4>Database</h4>
-          <p>{health.database || "Unknown"}</p>
+          <p>{health.database}</p>
         </div>
       </div>
 
-      {/* Navigation */}
       <div className="actions">
-        <a href="/dashboard/transactions" className="btn">
+        <Link to="/dashboard/transactions" className="btn">
           View Transactions
-        </a>
+        </Link>
+
+        <Link to="/dashboard/webhooks" className="btn">
+          Webhook Settings
+        </Link>
       </div>
     </div>
   );

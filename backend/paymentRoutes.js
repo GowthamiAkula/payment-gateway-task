@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("./db");
 const authenticateMerchant = require("./authMiddleware");
+const redisClient = require("./redis");
 const {
   isValidCardNumber,
   isValidExpiry,
@@ -9,14 +10,14 @@ const {
   detectCardNetwork
 } = require("./validationService");
 
-// Utility: simple delay
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Create Payment API
+/**
+ * ================================
+ * CREATE PAYMENT (ASYNC)
+ * ================================
+ */
 router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
   const { order_id, method, vpa, card } = req.body;
 
-  // Basic request validation
   if (!order_id || !method) {
     return res.status(400).json({
       error: {
@@ -27,11 +28,13 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
   }
 
   try {
-    // 1. Fetch order
+    // 1️⃣ Fetch order
     const orderResult = await pool.query(
-      `SELECT id, amount, status
-       FROM orders
-       WHERE id = $1 AND merchant_id = $2`,
+      `
+      SELECT id, amount, status
+      FROM orders
+      WHERE id = $1 AND merchant_id = $2
+      `,
       [order_id, req.merchant.id]
     );
 
@@ -45,9 +48,6 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
     }
 
     const order = orderResult.rows[0];
-    // Variables to store card info (NULL for UPI)
-
-
 
     if (order.status !== "created") {
       return res.status(400).json({
@@ -58,11 +58,10 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
       });
     }
 
-    // Variables to store card info (NULL for UPI)
+    // 2️⃣ Validate payment method
     let cardLast4 = null;
     let cardNetwork = null;
 
-    // 2. Validate payment method
     if (method === "upi") {
       if (!vpa || !/^[\w.-]+@[\w.-]+$/.test(vpa)) {
         return res.status(400).json({
@@ -72,7 +71,6 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
           }
         });
       }
-
     } else if (method === "card") {
       if (!card || !card.number || !card.expiry || !card.cvv) {
         return res.status(400).json({
@@ -110,10 +108,8 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
         });
       }
 
-      // ✅ IMPORTANT PART (Step 4.3 logic)
       cardLast4 = card.number.slice(-4);
       cardNetwork = detectCardNetwork(card.number);
-
     } else {
       return res.status(400).json({
         error: {
@@ -123,12 +119,12 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
       });
     }
 
-    // 3. Create payment (processing)
-    const paymentId =
-      "pay_" + Math.random().toString(36).substring(2, 18);
+    // 3️⃣ Create payment (PENDING)
+    const paymentId = "pay_" + Math.random().toString(36).substring(2, 18);
 
     await pool.query(
-      `INSERT INTO payments (
+      `
+      INSERT INTO payments (
         id,
         order_id,
         merchant_id,
@@ -137,64 +133,57 @@ router.post("/api/v1/payments", authenticateMerchant, async (req, res) => {
         card_last4,
         card_network
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
       [
         paymentId,
         order_id,
         req.merchant.id,
         method,
-        "processing",
+        "pending",
         cardLast4,
         cardNetwork
       ]
     );
 
-    // 4. Simulate processing delay
-    const delayMs = process.env.TEST_PROCESSING_DELAY
-      ? Number(process.env.TEST_PROCESSING_DELAY)
-      : 3000;
-
-    await delay(delayMs);
-
-    // 5. Decide success/failure
-    let success;
-    if (process.env.TEST_MODE === "true") {
-      success = process.env.TEST_PAYMENT_SUCCESS === "true";
-    } else {
-      success = Math.random() > 0.3;
-    }
-
-    const finalStatus = success ? "success" : "failed";
-
-    await pool.query(
-      `UPDATE payments SET status = $1 WHERE id = $2`,
-      [finalStatus, paymentId]
+    // 4️⃣ Enqueue job
+    await redisClient.lPush(
+      "payment_jobs",
+      JSON.stringify({
+        type: "PROCESS_PAYMENT",
+        payment_id: paymentId
+      })
     );
 
-    return res.status(200).json({
+    // 5️⃣ Async response
+    return res.status(202).json({
       id: paymentId,
       order_id,
-      status: finalStatus,
-      amount: order.amount,
-      currency: "INR",
-      method
+      status: "pending",
+      message: "Payment is being processed"
     });
 
-  } catch (error) {
+  } catch (err) {
+    console.error("Payment error:", err);
     return res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        description: "Payment failed"
+        description: "Payment initiation failed"
       }
     });
   }
 });
-// Get all payments for merchant (Transactions page)
+
+/**
+ * ================================
+ * LIST PAYMENTS
+ * ================================
+ */
 router.get("/api/v1/payments", authenticateMerchant, async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT 
+      SELECT
         p.id,
         p.order_id,
         o.amount,
@@ -209,9 +198,16 @@ router.get("/api/v1/payments", authenticateMerchant, async (req, res) => {
       [req.merchant.id]
     );
 
-    res.status(200).json(result.rows);
+    return res.status(200).json(
+      result.rows.map(row => ({
+        ...row,
+        amount: Number(row.amount)
+      }))
+    );
+
   } catch (err) {
-    res.status(500).json({
+    console.error("Fetch payments error:", err);
+    return res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",
         description: "Failed to fetch payments"
@@ -219,5 +215,84 @@ router.get("/api/v1/payments", authenticateMerchant, async (req, res) => {
     });
   }
 });
+
+
+/**
+ * ================================
+ * CAPTURE PAYMENT
+ * ================================
+ */
+router.post(
+  "/api/v1/payments/:id/capture",
+  authenticateMerchant,
+  async (req, res) => {
+    const paymentId = req.params.id;
+
+    try {
+      // 1️⃣ Fetch payment
+      const result = await pool.query(
+        `
+        SELECT id, status, captured
+        FROM payments
+        WHERE id = $1 AND merchant_id = $2
+        `,
+        [paymentId, req.merchant.id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: {
+            code: "NOT_FOUND",
+            description: "Payment not found"
+          }
+        });
+      }
+
+      const payment = result.rows[0];
+
+      // 2️⃣ Validate state
+      if (payment.status !== "success") {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_STATE",
+            description: "Only successful payments can be captured"
+          }
+        });
+      }
+
+      if (payment.captured) {
+        return res.status(400).json({
+          error: {
+            code: "ALREADY_CAPTURED",
+            description: "Payment already captured"
+          }
+        });
+      }
+
+      // 3️⃣ Capture payment (FINAL STEP)
+      const updateResult = await pool.query(
+        `
+        UPDATE payments
+        SET captured = true
+        WHERE id = $1
+        RETURNING id, status, captured
+        `,
+        [paymentId]
+      );
+
+      return res.status(200).json(updateResult.rows[0]);
+
+    } catch (err) {
+      console.error("Capture error:", err);
+      return res.status(500).json({
+        error: {
+          code: "INTERNAL_ERROR",
+          description: "Failed to capture payment"
+        }
+      });
+    }
+  }
+);
+
 
 module.exports = router;

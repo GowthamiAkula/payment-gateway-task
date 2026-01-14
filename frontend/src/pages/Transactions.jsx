@@ -1,67 +1,85 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import "./Dashboard.css";
 
-function Transactions() {
-  const [payments, setPayments] = useState([]);
-  const [error, setError] = useState("");
+function Dashboard() {
+  const apiKey = localStorage.getItem("apiKey");
+  const apiSecret = localStorage.getItem("apiSecret");
+
+  const [health, setHealth] = useState({
+    backend: "Checking...",
+    database: "Checking..."
+  });
 
   useEffect(() => {
-    const apiKey = localStorage.getItem("apiKey");
-    const apiSecret = localStorage.getItem("apiSecret");
+    async function checkHealth() {
+      try {
+        const res = await fetch("/health");
+        if (!res.ok) throw new Error("Health check failed");
 
-    fetch("/api/v1/payments", {
-      headers: {
-        "X-Api-Key": apiKey,
-        "X-Api-Secret": apiSecret,
-      },
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("Failed to fetch transactions");
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setPayments(data);
-      })
-      .catch(() => {
-        setError("Unable to load transactions");
-      });
+        const data = await res.json();
+
+        setHealth({
+          backend: data.status === "ok" ? "Operational" : "Down",
+          database: data.database || "Unknown"
+        });
+      } catch (err) {
+        setHealth({
+          backend: "Not Reachable",
+          database: "Not Reachable"
+        });
+      }
+    }
+
+    checkHealth();
   }, []);
 
   return (
-    <div>
-      <h2>Transactions</h2>
+    <div className="dashboard-container">
+      <h1 className="dashboard-title">Merchant Dashboard</h1>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {/* API Credentials */}
+      <div className="card">
+        <h3>API Credentials</h3>
 
-      {payments.length === 0 ? (
-        <p>No transactions found</p>
-      ) : (
-        <table border="1" cellPadding="8">
-          <thead>
-            <tr>
-              <th>Payment ID</th>
-              <th>Order ID</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Method</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((payment) => (
-              <tr key={payment.id}>
-                <td>{payment.id}</td>
-                <td>{payment.order_id}</td>
-                <td>₹{payment.amount / 100}</td>
-                <td>{payment.status}</td>
-                <td>{payment.method}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+        <div className="key-row">
+          <span>API Key</span>
+          <code>{apiKey}</code>
+        </div>
+
+        <div className="key-row">
+          <span>API Secret</span>
+          <code>{apiSecret}</code>
+        </div>
+      </div>
+
+      {/* Health Status */}
+      <div className="grid">
+        <div className="stat-card">
+          <h4>Backend Status</h4>
+          <p className={health.backend === "Operational" ? "ok" : "error"}>
+            {health.backend}
+          </p>
+        </div>
+
+        <div className="stat-card">
+          <h4>Database</h4>
+          <p>{health.database}</p>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="actions">
+        <Link to="/dashboard/transactions" className="btn">
+          View Transactions
+        </Link>
+
+        <Link to="/dashboard/webhooks" className="btn">
+          Webhook Settings
+        </Link>
+      </div>
     </div>
   );
 }
 
-export default Transactions;
+export default Dashboard;

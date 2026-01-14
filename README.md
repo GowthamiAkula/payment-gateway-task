@@ -224,3 +224,209 @@ TEST_PROCESSING_DELAY=2000
 ## ✅ Conclusion
 
 This project successfully demonstrates a real-world payment gateway workflow including merchant authentication, order management, payment processing, database persistence, frontend checkout simulation, and containerized deployment.
+
+# 💳 Payment Gateway System (End-to-End)
+
+A fully functional **Payment Gateway System** built using **Node.js, PostgreSQL, Redis, Docker, and React**.  
+This project simulates real-world payment gateway behavior including **orders, payments, refunds, webhooks, job queues, retries, and a merchant dashboard UI**.
+
+---
+
+## 🚀 Project Overview
+
+This system allows merchants to:
+
+- Create orders
+- Accept payments (UPI / Card)
+- Capture payments
+- Process refunds asynchronously
+- Receive webhook notifications
+- View transactions and system health via a dashboard
+- Track background jobs and retries
+
+The project is designed to be **Docker-only runnable**, evaluator-friendly, and production-inspired.
+
+---
+
+## 🧱 Tech Stack
+
+### Backend
+- **Node.js (Express)**
+- **PostgreSQL** – primary database
+- **Redis** – job queues & retry counters
+- **Worker service** – async processing
+- **Crypto (HMAC SHA256)** – webhook signature verification
+
+### Frontend
+- **React (Vite)**
+- **React Router**
+- **CSS (custom dashboard styling)**
+- **Nginx** – frontend + API proxy
+
+### DevOps
+- **Docker & Docker Compose**
+- Multi-container architecture
+
+---
+
+## 🧩 Architecture
+
+```
+
+Frontend (React + Nginx)
+|
+|  /api/*
+v
+Backend API (Node.js / Express)
+|
+|-- PostgreSQL (orders, payments, refunds, merchants)
+|
+|-- Redis (payment_jobs, refund_jobs, retry counters)
+|
+|-- Worker Service (async jobs + webhooks)
+
+````
+
+---
+
+## 🔐 Authentication
+
+All merchant APIs are protected using:
+- `X-Api-Key`
+- `X-Api-Secret`
+
+These credentials are stored securely in the database and validated via middleware.
+
+---
+
+## 📦 Core Features
+
+### 1️⃣ Orders
+- Create orders with amount & currency
+- Status lifecycle: `created → paid`
+
+### 2️⃣ Payments (Async)
+- Supports **UPI** and **Card**
+- Payment is created as `pending`
+- Worker processes payment asynchronously
+- Final status: `success` or `failed`
+
+### 3️⃣ Capture Payment
+- Only `success` payments can be captured
+- Prevents double capture
+
+### 4️⃣ Refunds (Async)
+- Refunds processed via worker queue
+- Refund webhook triggered after success
+
+### 5️⃣ Webhooks
+- Merchant-configurable webhook URL
+- Secure **HMAC SHA256 signature**
+- Supports retries with exponential backoff
+- All attempts logged in `webhook_logs`
+
+### 6️⃣ Job Queue System
+- Redis-backed queues:
+  - `payment_jobs`
+  - `refund_jobs`
+- Job status & retry stats APIs
+- Reset queues endpoint
+
+### 7️⃣ Dashboard (React)
+- Merchant login using API credentials
+- System health (backend + database)
+- Transactions table (live from backend)
+- Webhook configuration UI
+- Clean and responsive layout
+
+---
+
+## 🖥️ Dashboard Pages
+
+- `/` → Login
+- `/dashboard` → Merchant dashboard
+- `/dashboard/transactions` → Payments table
+- `/dashboard/webhooks` → Webhook settings (URL + secret)
+
+---
+
+## 🔔 Webhook Events
+
+### Payment
+- `payment.success`
+- `payment.failed`
+
+### Refund
+- `refund.success`
+
+Each webhook includes:
+- Event type
+- Resource data
+- Timestamp
+- `X-Webhook-Signature` header
+
+---
+
+## 🧪 Testing & Verification
+
+### Manual API Tests (curl)
+
+```bash
+# Create Order
+curl -X POST http://localhost:8000/api/v1/orders \
+ -H "X-Api-Key: key_test_abc123" \
+ -H "X-Api-Secret: secret_test_xyz789" \
+ -d '{"amount":50000}'
+````
+
+```bash
+# Create Payment
+curl -X POST http://localhost:8000/api/v1/payments \
+ -H "X-Api-Key: key_test_abc123" \
+ -H "X-Api-Secret: secret_test_xyz789" \
+ -d '{"order_id":"ORDER_ID","method":"upi","vpa":"test@upi"}'
+```
+
+```bash
+# List Payments
+curl http://localhost:8000/api/v1/payments \
+ -H "X-Api-Key: key_test_abc123" \
+ -H "X-Api-Secret: secret_test_xyz789"
+```
+
+---
+
+### Test Merchant Webhook
+
+```bash
+node test-merchant/webhook-receiver.js
+```
+
+Verifies:
+
+* Signature validation
+* Payload correctness
+* Retry handling
+
+---
+
+## 🐳 Docker Setup (Evaluator Ready)
+
+### Run entire system
+
+```bash
+docker compose up -d
+```
+
+Services started:
+
+* PostgreSQL
+* Redis
+* Backend API
+* Worker
+* Merchant Dashboard
+* Checkout App
+
+No local setup required beyond Docker.
+
+---
