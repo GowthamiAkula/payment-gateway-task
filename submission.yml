@@ -1,0 +1,37 @@
+version: "1.0"
+
+setup:
+  commands:
+    - echo "Starting setup phase"
+    - docker --version
+    - docker compose version
+
+start:
+  commands:
+    - echo "Starting payment gateway services"
+    - docker compose up -d
+    - sleep 20
+
+verify:
+  commands:
+    # Health check
+    - curl -f http://localhost:8000/health
+
+    # Verify API is accessible
+    - curl -f http://localhost:8000/api/v1/jobs/status \
+        -H "X-Api-Key: key_test_abc123" \
+        -H "X-Api-Secret: secret_test_xyz789"
+
+    # Verify payments endpoint
+    - curl -f http://localhost:8000/api/v1/payments \
+        -H "X-Api-Key: key_test_abc123" \
+        -H "X-Api-Secret: secret_test_xyz789"
+
+test:
+  commands:
+    - echo "No automated test suite provided – manual and API tests supported"
+
+shutdown:
+  commands:
+    - echo "Stopping all services"
+    - docker compose down
